@@ -1,0 +1,11 @@
+name = "iamyourphotographer-gallery"
+main = "src/index.js"
+compatibility_date = "2026-06-12"
+
+routes = [
+  { pattern = "gallery.iamyourphotographer.com/*", custom_domain = true }
+]
+
+[[r2_buckets]]
+binding = "GALLERY_BUCKET"
+bucket_name = "YOUR_R2_BUCKET_NAME"

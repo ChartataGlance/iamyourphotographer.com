@@ -1,37 +1,83 @@
-document.getElementById('year').textContent = new Date().getFullYear();
+const WORKER_BASE_URL = "https://gallery.iamyourphotographer.com";
+const FALLBACK_FOLDERS = ["weddings", "portraits", "events", "family", "brands"];
+const FOLDER_LABELS = {
+  weddings: "Weddings",
+  portraits: "Portraits",
+  events: "Events",
+  family: "Family",
+  brands: "Brands"
+};
 
-// Optional future Worker gallery loader.
-// Add your Worker URL below when ready, for example:
-// const WORKER_URL = 'https://iamyourphotographer-gallery.yourname.workers.dev';
-const WORKER_URL = '';
+const gallery = document.getElementById("gallery");
+const folderTabs = document.getElementById("folderTabs");
+const statusBox = document.getElementById("galleryStatus");
+document.getElementById("year").textContent = new Date().getFullYear();
 
-async function loadGalleryFromWorker(folder = '') {
-  if (!WORKER_URL) return;
+async function api(path) {
+  const res = await fetch(`${WORKER_BASE_URL}${path}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
 
+async function loadFolders() {
   try {
-    const url = folder ? `${WORKER_URL}?folder=${encodeURIComponent(folder)}` : WORKER_URL;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Gallery worker failed');
-
-    const data = await response.json();
-    const gallery = document.getElementById('gallery');
-    if (!gallery || !Array.isArray(data.images)) return;
-
-    gallery.innerHTML = data.images.map((img) => `
-      <figure>
-        <img src="${img.url}" alt="Photography gallery image by I Am Your Photographer" loading="lazy">
-        <figcaption>${cleanCaption(img.key || img.name || 'Gallery')}</figcaption>
-      </figure>
-    `).join('');
+    const data = await api("/api/folders");
+    const folders = Array.isArray(data.folders) && data.folders.length ? data.folders : FALLBACK_FOLDERS;
+    renderTabs(folders);
+    await loadGallery(folders[0]);
   } catch (error) {
-    console.warn('Using static gallery because Worker gallery did not load.', error);
+    console.warn(error);
+    renderTabs(FALLBACK_FOLDERS);
+    await loadGallery(FALLBACK_FOLDERS[0]);
   }
 }
 
-function cleanCaption(value) {
-  const first = String(value).split('/')[0] || 'Gallery';
-  return first.charAt(0).toUpperCase() + first.slice(1).replaceAll('-', ' ');
+function renderTabs(folders) {
+  folderTabs.innerHTML = folders.map((folder, index) => `
+    <button type="button" class="${index === 0 ? "active" : ""}" data-folder="${folder}">
+      ${FOLDER_LABELS[folder] || folder.replaceAll("-", " ")}
+    </button>
+  `).join("");
+
+  folderTabs.querySelectorAll("button").forEach(button => {
+    button.addEventListener("click", () => {
+      folderTabs.querySelectorAll("button").forEach(btn => btn.classList.remove("active"));
+      button.classList.add("active");
+      loadGallery(button.dataset.folder);
+    });
+  });
 }
 
-// Disabled until WORKER_URL is added.
-// loadGalleryFromWorker();
+async function loadGallery(folder) {
+  statusBox.textContent = `Loading ${FOLDER_LABELS[folder] || folder} photos...`;
+  gallery.innerHTML = "";
+
+  try {
+    const data = await api(`/api/gallery?folder=${encodeURIComponent(folder)}`);
+    const images = data.images || [];
+
+    if (!images.length) {
+      statusBox.textContent = `No photos found in gallery/${folder}/ yet.`;
+      return;
+    }
+
+    statusBox.textContent = `${images.length} photos in ${FOLDER_LABELS[folder] || folder}`;
+    gallery.innerHTML = images.map((image, index) => `
+      <figure>
+        <img src="${image.url}" alt="${escapeHtml(image.alt || `${FOLDER_LABELS[folder] || folder} photography by I Am Your Photographer`)}" loading="${index === 0 ? "eager" : "lazy"}">
+        <figcaption>${FOLDER_LABELS[folder] || folder}</figcaption>
+      </figure>
+    `).join("");
+  } catch (error) {
+    console.error(error);
+    statusBox.textContent = "Gallery could not load. Check your Worker URL, R2 binding and CORS headers.";
+  }
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, char => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;"
+  }[char]));
+}
+
+loadFolders();
